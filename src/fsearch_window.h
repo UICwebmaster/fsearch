@@ -49,6 +49,9 @@ void
 fsearch_application_window_update_listview_config(FsearchApplicationWindow *self);
 
 void
+fsearch_application_window_set_icon_view_size(FsearchApplicationWindow *win, int32_t size);
+
+void
 fsearch_application_window_apply_statusbar_revealer_config(FsearchApplicationWindow *win);
 
 void

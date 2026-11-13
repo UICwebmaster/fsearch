@@ -6,12 +6,18 @@
 #include "fsearch_config.h"
 #include "fsearch_database_entry_info.h"
 #include "fsearch_file_utils.h"
+#include "fsearch_thumbnailer.h"
 
 #include <glib/gi18n.h>
 #include <gtk/gtk.h>
 #include <math.h>
 #include <stdint.h>
 #include <sys/stat.h>
+
+// Thumbnails are only shown when icons are at least that large, smaller thumbnails aren't recognizable
+#define MIN_THUMBNAIL_ICON_SIZE 32
+// Upper bound for the number of cached thumbnails and pixbufs, to keep the memory usage in check
+#define MAX_CACHED_PIXBUFS 2000
 
 static int32_t
 get_icon_size_for_height(int32_t height) {
@@ -25,6 +31,21 @@ get_icon_size_for_height(int32_t height) {
         return 32;
     }
     return 48;
+}
+
+static int32_t
+get_icon_size(FsearchConfig *config, int32_t row_height) {
+    if (config->icon_view_size > 0) {
+        return config->icon_view_size;
+    }
+    return get_icon_size_for_height(row_height - ROW_PADDING_X);
+}
+
+static void
+object_unref_nullable(gpointer object) {
+    if (object) {
+        g_object_unref(object);
+    }
 }
 
 static GdkPixbuf *
@@ -62,6 +83,9 @@ get_pixbuf_from_gicon(FsearchResultView *result_view, GIcon *icon, int32_t icon_
     }
 
     if (pixbuf) {
+        if (g_hash_table_size(result_view->pixbuf_cache) > MAX_CACHED_PIXBUFS) {
+            g_hash_table_remove_all(result_view->pixbuf_cache);
+        }
         g_hash_table_insert(result_view->pixbuf_cache, g_object_ref(icon), pixbuf);
     }
     return pixbuf;
@@ -148,7 +172,7 @@ fsearch_result_view_query_tooltip(FsearchResultView *view,
     switch (col->type) {
     case DATABASE_INDEX_PROPERTY_NAME: {
         if (config->show_listview_icons) {
-            int32_t icon_size = get_icon_size_for_height((int32_t)row_height - ROW_PADDING_X);
+            int32_t icon_size = get_icon_size(config, (int32_t)row_height);
             width -= 2 * ROW_PADDING_X + icon_size;
         }
         text = g_filename_display_name(fsearch_database_entry_info_get_name(info)->str);
@@ -298,6 +322,102 @@ queue_icon_load(FsearchResultView *view, const char *path, uint32_t idx) {
                             icon_load_ctx);
 }
 
+typedef struct {
+    FsearchResultView *view;
+    char *path;
+    GCancellable *cancellable;
+    uint32_t idx;
+} ResultViewThumbnailLoadCtx;
+
+static void
+thumbnail_load_free(ResultViewThumbnailLoadCtx *ctx) {
+    ctx->view = NULL;
+    g_clear_object(&ctx->cancellable);
+    g_clear_pointer(&ctx->path, g_free);
+    g_free(ctx);
+}
+
+static void
+on_thumbnail_ready(GObject *source, GAsyncResult *res, gpointer user_data) {
+    ResultViewThumbnailLoadCtx *ctx = user_data;
+    g_autoptr(GError) error = NULL;
+    g_autoptr(GdkPixbuf) thumbnail = fsearch_thumbnailer_load_finish(fsearch_thumbnailer_get_default(), res, &error);
+
+    FsearchResultView *view = ctx->view;
+    if (!view || g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        // Request was cancelled
+        g_clear_pointer(&ctx, thumbnail_load_free);
+        return;
+    }
+
+    g_hash_table_remove(view->thumbnail_loads, ctx->path);
+    if (g_hash_table_size(view->thumbnail_cache) > MAX_CACHED_PIXBUFS) {
+        g_hash_table_remove_all(view->thumbnail_cache);
+    }
+    g_hash_table_insert(view->thumbnail_cache, g_strdup(ctx->path), g_steal_pointer(&thumbnail));
+    fsearch_list_view_redraw_row(view->list_view, ctx->idx);
+
+    g_clear_pointer(&ctx, thumbnail_load_free);
+}
+
+static void
+queue_thumbnail_load(FsearchResultView *view, const char *path, uint32_t idx) {
+    if (g_hash_table_contains(view->thumbnail_loads, path)) {
+        return;
+    }
+
+    ResultViewThumbnailLoadCtx *ctx = g_new0(ResultViewThumbnailLoadCtx, 1);
+    ctx->view = view;
+    ctx->path = g_strdup(path);
+    ctx->idx = idx;
+    ctx->cancellable = g_cancellable_new();
+    g_hash_table_insert(view->thumbnail_loads, g_strdup(path), ctx);
+
+    fsearch_thumbnailer_load_async(fsearch_thumbnailer_get_default(),
+                                   path,
+                                   view->thumbnail_size,
+                                   ctx->cancellable,
+                                   on_thumbnail_ready,
+                                   ctx);
+}
+
+static void
+cancel_thumbnail_loads(FsearchResultView *view) {
+    GHashTableIter iter;
+    gpointer value;
+    g_hash_table_iter_init(&iter, view->thumbnail_loads);
+    while (g_hash_table_iter_next(&iter, NULL, &value)) {
+        ResultViewThumbnailLoadCtx *ctx = value;
+        ctx->view = NULL;
+        g_cancellable_cancel(ctx->cancellable);
+    }
+    g_hash_table_remove_all(view->thumbnail_loads);
+}
+
+// Returns a thumbnail for the entry if one is available. Otherwise returns NULL and, if the entry might have a
+// thumbnail, queues loading/creating it in the background.
+static GdkPixbuf *
+get_thumbnail(FsearchResultView *view, FsearchDatabaseEntryInfo *info, uint32_t row) {
+    if (fsearch_database_entry_info_get_entry_type(info) == DATABASE_ENTRY_TYPE_FOLDER) {
+        return NULL;
+    }
+    GString *path_full = fsearch_database_entry_info_get_path_full(info);
+    gpointer thumbnail = NULL;
+    if (g_hash_table_lookup_extended(view->thumbnail_cache, path_full->str, NULL, &thumbnail)) {
+        return thumbnail;
+    }
+
+    // Only ask the thumbnailer for files whose name suggests that they can be thumbnailed.
+    // This is a cheap check which keeps the thumbnail queue free of source code, documents, etc.
+    g_autofree char *content_type = g_content_type_guess(fsearch_database_entry_info_get_name(info)->str, NULL, 0, NULL);
+    if (!fsearch_thumbnailer_can_thumbnail(fsearch_thumbnailer_get_default(), content_type)) {
+        g_hash_table_insert(view->thumbnail_cache, g_strdup(path_full->str), NULL);
+        return NULL;
+    }
+    queue_thumbnail_load(view, path_full->str, row);
+    return NULL;
+}
+
 static void
 cancel_icon_loads(FsearchResultView *view) {
     GHashTableIter iter;
@@ -328,7 +448,9 @@ fsearch_result_view_draw_row(FsearchResultView *result_view,
         return;
     }
 
-    const int32_t icon_size = get_icon_size_for_height(rect->height - ROW_PADDING_X);
+    FsearchConfig *config = fsearch_application_get_config(FSEARCH_APPLICATION_DEFAULT);
+
+    const int32_t icon_size = get_icon_size(config, rect->height);
     const int32_t scale_factor = gdk_window_get_scale_factor(bin_window);
 
     if (result_view->row_height != rect->height || result_view->scale_factor != scale_factor) {
@@ -336,6 +458,13 @@ fsearch_result_view_draw_row(FsearchResultView *result_view,
         result_view->row_height = rect->height;
         result_view->scale_factor = scale_factor;
     }
+    if (result_view->thumbnail_size != icon_size * scale_factor) {
+        cancel_thumbnail_loads(result_view);
+        g_hash_table_remove_all(result_view->thumbnail_cache);
+        result_view->thumbnail_size = icon_size * scale_factor;
+    }
+    const gboolean show_thumbnails = config->show_listview_icons && config->show_thumbnails
+                                  && icon_size >= MIN_THUMBNAIL_ICON_SIZE;
 
     gboolean pending = FALSE;
     FsearchDatabaseEntryInfo *info = NULL;
@@ -376,8 +505,6 @@ fsearch_result_view_draw_row(FsearchResultView *result_view,
         cairo_restore(cr);
     }
 
-    FsearchConfig *config = fsearch_application_get_config(FSEARCH_APPLICATION_DEFAULT);
-
     // Render row foreground
     int32_t x = rect->x;
     for (GList *col = columns; col != NULL; col = col->next) {
@@ -406,7 +533,33 @@ fsearch_result_view_draw_row(FsearchResultView *result_view,
             case DATABASE_INDEX_PROPERTY_NAME: {
                 text = fsearch_database_entry_info_get_name(info)->str;
 
-                if (config->show_listview_icons) {
+                GdkPixbuf *thumbnail = show_thumbnails ? get_thumbnail(result_view, info, row) : NULL;
+                if (thumbnail) {
+                    cairo_surface_t *thumbnail_surface = gdk_cairo_surface_create_from_pixbuf(thumbnail,
+                                                                                              scale_factor,
+                                                                                              bin_window);
+                    if (thumbnail_surface) {
+                        // Thumbnails keep their aspect ratio, center them within the icon area
+                        const int32_t thumb_width = gdk_pixbuf_get_width(thumbnail) / scale_factor;
+                        const int32_t thumb_height = gdk_pixbuf_get_height(thumbnail) / scale_factor;
+                        int32_t x_icon = x;
+                        if (right_to_left_text) {
+                            x_icon += column->effective_width - icon_size - ROW_PADDING_X;
+                        }
+                        else {
+                            x_icon += ROW_PADDING_X;
+                            dx += icon_size + 2 * ROW_PADDING_X;
+                        }
+                        dw += icon_size + 2 * ROW_PADDING_X;
+                        gtk_render_icon_surface(context,
+                                                cr,
+                                                thumbnail_surface,
+                                                x_icon + floor((icon_size - thumb_width) / 2.0),
+                                                rect->y + floor((rect->height - thumb_height) / 2.0));
+                        g_clear_pointer(&thumbnail_surface, cairo_surface_destroy);
+                    }
+                }
+                else if (config->show_listview_icons) {
                     GString *path_full = fsearch_database_entry_info_get_path_full(info);
                     GIcon *icon = g_hash_table_lookup(result_view->icon_cache, path_full->str);
                     g_autoptr(GIcon) placeholder = NULL;
@@ -493,7 +646,11 @@ fsearch_result_view_draw_row(FsearchResultView *result_view,
         pango_layout_set_width(layout, (column->effective_width - 2 * ROW_PADDING_X - dw) * PANGO_SCALE);
         pango_layout_set_alignment(layout, column->alignment);
         pango_layout_set_ellipsize(layout, column->ellipsize_mode);
-        gtk_render_layout(context, cr, x + ROW_PADDING_X + dx, rect->y + ROW_PADDING_Y, layout);
+        // Center the text vertically, rows can be much higher than the text when large icons are shown
+        int text_height = 0;
+        pango_layout_get_pixel_size(layout, NULL, &text_height);
+        const int32_t y_text = MAX(rect->y + ROW_PADDING_Y, rect->y + (rect->height - text_height) / 2);
+        gtk_render_layout(context, cr, x + ROW_PADDING_X + dx, y_text, layout);
 
         // Remember where the name (icon + text) ends, so a mouse drag starting inside that box
         // becomes a drag and drop operation instead of a rubberband selection
@@ -513,6 +670,9 @@ fsearch_result_view_row_cache_reset(FsearchResultView *result_view) {
     g_return_if_fail(result_view);
     g_hash_table_remove_all(result_view->item_info_cache);
     cancel_icon_loads(result_view);
+    // Thumbnails stay cached (they're keyed by path). Only pending loads are cancelled, the rows they were
+    // requested for might no longer exist.
+    cancel_thumbnail_loads(result_view);
 }
 
 static void
@@ -571,6 +731,8 @@ fsearch_result_view_new(guint view_id) {
     result_view->pixbuf_cache = g_hash_table_new_full(g_icon_hash, (GEqualFunc)g_icon_equal, g_object_unref, g_object_unref);
     result_view->icon_cache = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_object_unref);
     result_view->icon_loads = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+    result_view->thumbnail_cache = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, object_unref_nullable);
+    result_view->thumbnail_loads = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 
     result_view->icon_theme_change_handler_id = g_signal_connect(gtk_icon_theme_get_default(),
                                                                  "changed",
@@ -583,11 +745,14 @@ fsearch_result_view_new(guint view_id) {
 void
 fsearch_result_view_free(FsearchResultView *result_view) {
     cancel_icon_loads(result_view);
+    cancel_thumbnail_loads(result_view);
     g_clear_signal_handler(&result_view->icon_theme_change_handler_id, gtk_icon_theme_get_default());
     g_clear_pointer(&result_view->item_info_cache, g_hash_table_unref);
     g_clear_pointer(&result_view->pixbuf_cache, g_hash_table_unref);
     g_clear_pointer(&result_view->icon_cache, g_hash_table_unref);
     g_clear_pointer(&result_view->icon_loads, g_hash_table_unref);
+    g_clear_pointer(&result_view->thumbnail_cache, g_hash_table_unref);
+    g_clear_pointer(&result_view->thumbnail_loads, g_hash_table_unref);
     g_clear_object(&result_view->db);
     g_clear_pointer(&result_view, free);
 }

@@ -506,6 +506,20 @@ fsearch_application_startup(GApplication *app) {
     set_accel_for_action(app, "app.preferences(uint32 0)", "<control>p");
     set_accel_for_action(app, "win.close_window", "<control>w");
     set_accel_for_action(app, "app.help", "F1");
+    // Icon sizes. Shifted digits are listed as well, since depending on the keyboard layout
+    // Ctrl+Shift+1 is reported as either "1" (e.g. AZERTY) or "exclam" (e.g. QWERTY).
+    set_accels_for_action(app,
+                          "win.icon_view_size(192)",
+                          (const gchar *const[]){"<control><shift>1", "<control><shift>exclam", NULL});
+    set_accels_for_action(app,
+                          "win.icon_view_size(96)",
+                          (const gchar *const[]){"<control><shift>2", "<control><shift>at", NULL});
+    set_accels_for_action(app,
+                          "win.icon_view_size(48)",
+                          (const gchar *const[]){"<control><shift>3", "<control><shift>numbersign", NULL});
+    set_accels_for_action(app,
+                          "win.icon_view_size(0)",
+                          (const gchar *const[]){"<control><shift>6", "<control><shift>asciicircum", NULL});
     set_accels_for_escape(app);
 }
 

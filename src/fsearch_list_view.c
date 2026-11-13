@@ -81,6 +81,8 @@ struct _FsearchListView {
 
     gint num_rows;
     gint row_height;
+    // Rows are at least that high (e.g. to fit large icons or thumbnails), 0 means the height depends on the font only
+    gint min_row_height;
 
     gint header_height;
 
@@ -1662,7 +1664,7 @@ fsearch_list_view_size_allocate(GtkWidget *widget, GtkAllocation *allocation) {
 
     if (gtk_widget_get_realized(widget)) {
         int font_height = get_font_height_for_widget(GTK_WIDGET(view));
-        view->row_height = font_height + 2 * ROW_PADDING_Y;
+        view->row_height = MAX(font_height + 2 * ROW_PADDING_Y, view->min_row_height);
         view->list_height = view->row_height * view->num_rows;
         gdk_window_move_resize(gtk_widget_get_window(widget),
                                allocation->x,
@@ -2432,6 +2434,27 @@ fsearch_list_view_set_row_drag_end_position(FsearchListView *view, int32_t row, 
         view->row_drag_end_position_array = g_renew(gint, view->row_drag_end_position_array, num_rows_in_view);
     }
     view->row_drag_end_position_array[row % view->row_drag_end_position_array_size] = end_x;
+}
+
+void
+fsearch_list_view_set_min_row_height(FsearchListView *view, gint min_row_height) {
+    g_return_if_fail(FSEARCH_IS_LIST_VIEW(view));
+    min_row_height = MAX(0, min_row_height);
+    if (view->min_row_height == min_row_height) {
+        return;
+    }
+    // Keep the first visible row in view when the row height changes
+    const double first_visible_row = view->row_height > 0 ? get_vscroll_pos(view) / (double)view->row_height : 0;
+    view->min_row_height = min_row_height;
+    if (gtk_widget_get_realized(GTK_WIDGET(view))) {
+        int font_height = get_font_height_for_widget(GTK_WIDGET(view));
+        view->row_height = MAX(font_height + 2 * ROW_PADDING_Y, view->min_row_height);
+        view->list_height = view->row_height * view->num_rows;
+        if (view->vadjustment) {
+            gtk_adjustment_set_value(view->vadjustment, first_visible_row * view->row_height);
+        }
+    }
+    gtk_widget_queue_resize(GTK_WIDGET(view));
 }
 
 FsearchListViewColumn *

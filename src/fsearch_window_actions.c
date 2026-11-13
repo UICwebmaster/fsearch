@@ -982,6 +982,12 @@ fsearch_window_action_match_case(GSimpleAction *action, GVariant *variant, gpoin
 }
 
 static void
+fsearch_window_action_set_icon_view_size(GSimpleAction *action, GVariant *variant, gpointer user_data) {
+    FsearchApplicationWindow *self = user_data;
+    fsearch_application_window_set_icon_view_size(self, g_variant_get_int32(variant));
+}
+
+static void
 fsearch_window_action_set_filter(GSimpleAction *action, GVariant *variant, gpointer user_data) {
     FsearchApplicationWindow *self = user_data;
     g_simple_action_set_state(action, variant);
@@ -1111,6 +1117,7 @@ static GActionEntry FsearchWindowActions[] = {
     {"show_statusbar", action_toggle_state_cb, NULL, "true", fsearch_window_action_show_statusbar},
     {"show_filter", action_toggle_state_cb, NULL, "true", fsearch_window_action_show_filter},
     {"show_search_button", action_toggle_state_cb, NULL, "true", fsearch_window_action_show_search_button},
+    {"icon_view_size", NULL, "i", "0", fsearch_window_action_set_icon_view_size},
     // Search
     {"search_in_path", action_toggle_state_cb, NULL, "true", fsearch_window_action_search_in_path},
     {"search_mode", action_toggle_state_cb, NULL, "true", fsearch_window_action_search_mode},
@@ -1152,6 +1159,7 @@ fsearch_window_actions_update(FsearchApplicationWindow *self) {
     action_set_enabled(group, "show_statusbar", TRUE);
     action_set_enabled(group, "show_filter", TRUE);
     action_set_enabled(group, "show_search_button", TRUE);
+    action_set_enabled(group, "icon_view_size", TRUE);
     action_set_enabled(group, "show_name_column", FALSE);
     action_set_enabled(group, "show_path_column", TRUE);
     action_set_enabled(group, "show_type_column", TRUE);
@@ -1173,6 +1181,7 @@ fsearch_window_actions_update(FsearchApplicationWindow *self) {
     action_set_active_bool(group, "show_size_column", config->show_size_column);
     action_set_active_bool(group, "show_modified_column", config->show_modified_column);
     action_set_active_int(group, "filter", active_filter);
+    action_set_active_int(group, "icon_view_size", config->icon_view_size);
 }
 
 void

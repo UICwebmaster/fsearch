@@ -13,6 +13,13 @@ typedef struct {
     GHashTable *icon_cache;
     GHashTable *icon_loads;
 
+    // path (char *) -> thumbnail (GdkPixbuf *, NULL if the file has no thumbnail)
+    GHashTable *thumbnail_cache;
+    // path (char *) -> ResultViewThumbnailLoadCtx *
+    GHashTable *thumbnail_loads;
+    // size of the cached thumbnails in device pixels
+    int32_t thumbnail_size;
+
     // remember the row height and scale factor from the last draw call
     // when it changes we need to reset the icon cache
     int32_t row_height;

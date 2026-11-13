@@ -42,6 +42,7 @@ struct _FsearchPreferencesDialog {
     GtkToggleButton *single_click_open_button;
     GtkToggleButton *launch_desktop_files_button;
     GtkToggleButton *show_icons_button;
+    GtkToggleButton *show_thumbnails_button;
     GtkToggleButton *highlight_search_terms;
     GtkToggleButton *show_base_2_units;
     GtkComboBox *action_after_file_open;
@@ -138,6 +139,7 @@ update_config(FsearchPreferencesDialog *self) {
     self->config->single_click_open = gtk_toggle_button_get_active(self->single_click_open_button);
     self->config->launch_desktop_files = gtk_toggle_button_get_active(self->launch_desktop_files_button);
     self->config->show_listview_icons = gtk_toggle_button_get_active(self->show_icons_button);
+    self->config->show_thumbnails = gtk_toggle_button_get_active(self->show_thumbnails_button);
     self->config->highlight_search_terms = gtk_toggle_button_get_active(self->highlight_search_terms);
     self->config->show_base_2_units = gtk_toggle_button_get_active(self->show_base_2_units);
     self->config->action_after_file_open_keyboard = gtk_toggle_button_get_active(self->action_after_file_open_keyboard);
@@ -250,6 +252,8 @@ fsearch_preferences_dialog_constructed(GObject *object) {
     gtk_toggle_button_set_active(self->single_click_open_button, self->config_old->single_click_open);
     gtk_toggle_button_set_active(self->launch_desktop_files_button, self->config_old->launch_desktop_files);
     gtk_toggle_button_set_active(self->show_icons_button, self->config_old->show_listview_icons);
+    gtk_toggle_button_set_active(self->show_thumbnails_button, self->config_old->show_thumbnails);
+    g_object_bind_property(self->show_icons_button, "active", self->show_thumbnails_button, "sensitive", G_BINDING_SYNC_CREATE);
     gtk_toggle_button_set_active(self->highlight_search_terms, self->config_old->highlight_search_terms);
     gtk_toggle_button_set_active(self->show_base_2_units, self->config_old->show_base_2_units);
     gtk_toggle_button_set_active(self->action_after_file_open_keyboard,
@@ -304,6 +308,7 @@ fsearch_preferences_dialog_class_init(FsearchPreferencesDialogClass *klass) {
     gtk_widget_class_bind_template_child(widget_class, FsearchPreferencesDialog, single_click_open_button);
     gtk_widget_class_bind_template_child(widget_class, FsearchPreferencesDialog, launch_desktop_files_button);
     gtk_widget_class_bind_template_child(widget_class, FsearchPreferencesDialog, show_icons_button);
+    gtk_widget_class_bind_template_child(widget_class, FsearchPreferencesDialog, show_thumbnails_button);
     gtk_widget_class_bind_template_child(widget_class, FsearchPreferencesDialog, highlight_search_terms);
     gtk_widget_class_bind_template_child(widget_class, FsearchPreferencesDialog, show_base_2_units);
     gtk_widget_class_bind_template_child(widget_class, FsearchPreferencesDialog, action_after_file_open);

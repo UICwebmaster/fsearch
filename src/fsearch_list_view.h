@@ -162,3 +162,6 @@ fsearch_list_view_redraw_row(FsearchListView *view, int row_idx);
 
 void
 fsearch_list_view_set_row_drag_end_position(FsearchListView *view, int32_t row, gint end_x);
+
+void
+fsearch_list_view_set_min_row_height(FsearchListView *view, gint min_row_height);

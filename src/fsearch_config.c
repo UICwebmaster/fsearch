@@ -123,6 +123,8 @@ static const FsearchKeyData INTERFACE_SECTION[] = {
     CONF_BOOL(show_filter, true),
     CONF_BOOL(show_search_button, false),
     CONF_BOOL(show_listview_icons, true),
+    CONF_BOOL(show_thumbnails, true),
+    CONF_INT(icon_view_size, 0),
     CONF_BOOL(show_path_column, true),
     CONF_BOOL(show_type_column, false),
     CONF_BOOL(show_extension_column, true),
@@ -835,6 +837,7 @@ config_cmp(FsearchConfig *c1, FsearchConfig *c2) {
         result.search_config_changed = true;
     }
     if (c1->highlight_search_terms != c2->highlight_search_terms || c1->show_listview_icons != c2->show_listview_icons
+        || c1->show_thumbnails != c2->show_thumbnails || c1->icon_view_size != c2->icon_view_size
         || c1->single_click_open != c2->single_click_open || c1->enable_list_tooltips != c2->enable_list_tooltips) {
         result.listview_config_changed = true;
     }

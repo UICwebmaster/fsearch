@@ -64,6 +64,7 @@ libfsearch_ui_sources = [
     'fsearch_preview.c',
     'fsearch_result_view.c',
     'fsearch_statusbar.c',
+    'fsearch_thumbnailer.c',
     'fsearch_ui_utils.c',
     'fsearch_window.c',
     'fsearch_window_actions.c',

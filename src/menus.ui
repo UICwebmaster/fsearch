@@ -105,6 +105,28 @@
                     <attribute name="action">win.show_search_button</attribute>
                 </item>
             </section>
+            <section>
+                <item>
+                    <attribute name="label" translatable="yes">Extra Large Icons</attribute>
+                    <attribute name="action">win.icon_view_size</attribute>
+                    <attribute name="target" type="i">192</attribute>
+                </item>
+                <item>
+                    <attribute name="label" translatable="yes">Large Icons</attribute>
+                    <attribute name="action">win.icon_view_size</attribute>
+                    <attribute name="target" type="i">96</attribute>
+                </item>
+                <item>
+                    <attribute name="label" translatable="yes">Medium Icons</attribute>
+                    <attribute name="action">win.icon_view_size</attribute>
+                    <attribute name="target" type="i">48</attribute>
+                </item>
+                <item>
+                    <attribute name="label" translatable="yes">Details</attribute>
+                    <attribute name="action">win.icon_view_size</attribute>
+                    <attribute name="target" type="i">0</attribute>
+                </item>
+            </section>
         </submenu>
         <submenu>
             <attribute name="label" translatable="yes">_Search</attribute>

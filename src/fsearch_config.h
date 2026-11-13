@@ -89,6 +89,10 @@ struct _FsearchConfig {
 
     // Columns
     bool show_listview_icons;
+    // Show thumbnails of images and videos instead of file type icons
+    bool show_thumbnails;
+    // Size of the icons/thumbnails in pixels. 0 means the size is derived from the font size (details view).
+    int32_t icon_view_size;
     bool show_path_column;
     bool show_type_column;
     bool show_extension_column;

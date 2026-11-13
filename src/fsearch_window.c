@@ -938,6 +938,87 @@ on_drag(FsearchListView *lv, gpointer user_data) {
     gtk_target_list_unref(target_list);
 }
 
+// Icon sizes of the view modes: details (icon size depends on the font size), medium, large and extra large icons
+static const int32_t icon_view_sizes[] = {0, 48, 96, 192};
+
+static void
+apply_icon_view_size(FsearchApplicationWindow *win) {
+    FsearchConfig *config = fsearch_application_get_config(FSEARCH_APPLICATION_DEFAULT);
+    const int32_t size = config->icon_view_size;
+    fsearch_list_view_set_min_row_height(win->result_view->list_view, size > 0 ? size + 2 * ROW_PADDING_Y : 0);
+}
+
+void
+fsearch_application_window_set_icon_view_size(FsearchApplicationWindow *win, int32_t size) {
+    g_assert(FSEARCH_IS_APPLICATION_WINDOW(win));
+    FsearchConfig *config = fsearch_application_get_config(FSEARCH_APPLICATION_DEFAULT);
+    config->icon_view_size = CLAMP(size, 0, icon_view_sizes[G_N_ELEMENTS(icon_view_sizes) - 1]);
+
+    GAction *action = g_action_map_lookup_action(G_ACTION_MAP(win), "icon_view_size");
+    if (action) {
+        g_simple_action_set_state(G_SIMPLE_ACTION(action), g_variant_new_int32(config->icon_view_size));
+    }
+    apply_icon_view_size(win);
+    gtk_widget_queue_draw(GTK_WIDGET(win->result_view->list_view));
+}
+
+static void
+zoom_icon_view(FsearchApplicationWindow *win, gboolean zoom_in) {
+    FsearchConfig *config = fsearch_application_get_config(FSEARCH_APPLICATION_DEFAULT);
+    const guint num_sizes = G_N_ELEMENTS(icon_view_sizes);
+    guint current = 0;
+    for (guint i = 0; i < num_sizes; i++) {
+        if (config->icon_view_size >= icon_view_sizes[i]) {
+            current = i;
+        }
+    }
+    if (zoom_in && current + 1 < num_sizes) {
+        fsearch_application_window_set_icon_view_size(win, icon_view_sizes[current + 1]);
+    }
+    else if (!zoom_in && current > 0) {
+        fsearch_application_window_set_icon_view_size(win, icon_view_sizes[current - 1]);
+    }
+}
+
+static gboolean
+on_listview_scroll_event(GtkWidget *widget, GdkEventScroll *event, gpointer user_data) {
+    FsearchApplicationWindow *win = FSEARCH_APPLICATION_WINDOW(user_data);
+    static gdouble smooth_delta = 0;
+
+    GdkModifierType mods = gtk_accelerator_get_default_mod_mask();
+    if ((event->state & mods) != GDK_CONTROL_MASK) {
+        return GDK_EVENT_PROPAGATE;
+    }
+
+    // Ctrl + mouse wheel changes the icon size, like in most file managers
+    switch (event->direction) {
+    case GDK_SCROLL_UP:
+        zoom_icon_view(win, TRUE);
+        break;
+    case GDK_SCROLL_DOWN:
+        zoom_icon_view(win, FALSE);
+        break;
+    case GDK_SCROLL_SMOOTH: {
+        gdouble dx = 0;
+        gdouble dy = 0;
+        gdk_event_get_scroll_deltas((GdkEvent *)event, &dx, &dy);
+        smooth_delta += dy;
+        if (smooth_delta <= -1.0) {
+            zoom_icon_view(win, TRUE);
+            smooth_delta = 0;
+        }
+        else if (smooth_delta >= 1.0) {
+            zoom_icon_view(win, FALSE);
+            smooth_delta = 0;
+        }
+        break;
+    }
+    default:
+        break;
+    }
+    return GDK_EVENT_STOP;
+}
+
 static void
 fsearch_application_window_init_overlays(FsearchApplicationWindow *win) {
     g_assert(FSEARCH_IS_APPLICATION_WINDOW(win));
@@ -1010,8 +1091,10 @@ fsearch_application_window_init_listview(FsearchApplicationWindow *win) {
     g_signal_connect(list_view, "on-drag", G_CALLBACK(on_drag), win);
     g_signal_connect(list_view, "drag-data-get", G_CALLBACK(on_drag_data_get), win);
     g_signal_connect(list_view, "drag-begin", G_CALLBACK(on_drag_begin), win);
+    g_signal_connect(win->listview_scrolled_window, "scroll-event", G_CALLBACK(on_listview_scroll_event), win);
 
     win->result_view->list_view = list_view;
+    apply_icon_view_size(win);
 }
 
 static void
@@ -1464,6 +1547,7 @@ fsearch_application_window_update_listview_config(FsearchApplicationWindow *win)
     FsearchConfig *config = fsearch_application_get_config(FSEARCH_APPLICATION_DEFAULT);
     fsearch_list_view_set_single_click_activate(win->result_view->list_view, config->single_click_open);
     gtk_widget_set_has_tooltip(GTK_WIDGET(win->result_view->list_view), config->enable_list_tooltips);
+    apply_icon_view_size(win);
 
     redraw_listview(win);
 }

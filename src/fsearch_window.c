@@ -853,6 +853,91 @@ on_listview_row_is_selected(int row, gpointer user_data) {
     return FALSE;
 }
 
+enum {
+    DND_TARGET_URI_LIST,
+    DND_TARGET_TEXT,
+};
+
+static void
+append_selected_path(FsearchDatabaseEntry *entry, gpointer userdata) {
+    GPtrArray *paths = userdata;
+    GString *path = db_entry_get_path_full(entry);
+    if (path) {
+        g_ptr_array_add(paths, g_string_free(path, FALSE));
+    }
+}
+
+static GPtrArray *
+get_selected_paths(FsearchApplicationWindow *win) {
+    GPtrArray *paths = g_ptr_array_new_with_free_func(g_free);
+    fsearch_application_window_selection_for_each(win, append_selected_path, paths);
+    return paths;
+}
+
+static void
+on_drag_data_get(GtkWidget *widget,
+                 GdkDragContext *context,
+                 GtkSelectionData *selection_data,
+                 guint info,
+                 guint time,
+                 gpointer user_data) {
+    FsearchApplicationWindow *win = FSEARCH_APPLICATION_WINDOW(user_data);
+    g_autoptr(GPtrArray) paths = get_selected_paths(win);
+    if (paths->len == 0) {
+        return;
+    }
+
+    if (info == DND_TARGET_URI_LIST) {
+        g_auto(GStrv) uris = g_new0(gchar *, paths->len + 1);
+        guint num_uris = 0;
+        for (guint i = 0; i < paths->len; i++) {
+            gchar *uri = g_filename_to_uri(g_ptr_array_index(paths, i), NULL, NULL);
+            if (uri) {
+                uris[num_uris++] = uri;
+            }
+        }
+        gtk_selection_data_set_uris(selection_data, uris);
+    }
+    else {
+        // Plain text targets (e.g. terminals, text editors) get the shell quoted paths, separated by spaces
+        g_autoptr(GString) text = g_string_new(NULL);
+        for (guint i = 0; i < paths->len; i++) {
+            g_autofree gchar *quoted = g_shell_quote(g_ptr_array_index(paths, i));
+            if (i > 0) {
+                g_string_append_c(text, ' ');
+            }
+            g_string_append(text, quoted);
+        }
+        gtk_selection_data_set_text(selection_data, text->str, (gint)text->len);
+    }
+}
+
+static void
+on_drag_begin(GtkWidget *widget, GdkDragContext *context, gpointer user_data) {
+    FsearchApplicationWindow *win = FSEARCH_APPLICATION_WINDOW(user_data);
+    const uint32_t num_selected = fsearch_application_window_get_num_selected(win);
+    gtk_drag_set_icon_name(context, num_selected > 1 ? "edit-copy" : "text-x-generic", 0, 0);
+}
+
+static void
+on_drag(FsearchListView *lv, gpointer user_data) {
+    static const GtkTargetEntry targets[] = {
+        {"text/uri-list", 0, DND_TARGET_URI_LIST},
+    };
+    GtkTargetList *target_list = gtk_target_list_new(targets, G_N_ELEMENTS(targets));
+    gtk_target_list_add_text_targets(target_list, DND_TARGET_TEXT);
+    GdkEvent *event = gtk_get_current_event();
+    gtk_drag_begin_with_coordinates(GTK_WIDGET(lv),
+                                    target_list,
+                                    GDK_ACTION_COPY | GDK_ACTION_LINK,
+                                    GDK_BUTTON_PRIMARY,
+                                    event,
+                                    -1,
+                                    -1);
+    g_clear_pointer(&event, gdk_event_free);
+    gtk_target_list_unref(target_list);
+}
+
 static void
 fsearch_application_window_init_overlays(FsearchApplicationWindow *win) {
     g_assert(FSEARCH_IS_APPLICATION_WINDOW(win));
@@ -922,6 +1007,9 @@ fsearch_application_window_init_listview(FsearchApplicationWindow *win) {
     g_signal_connect_object(list_view, "row-popup", G_CALLBACK(on_fsearch_list_view_popup), win, G_CONNECT_AFTER);
     g_signal_connect_object(list_view, "row-activated", G_CALLBACK(on_fsearch_list_view_row_activated), win, G_CONNECT_AFTER);
     g_signal_connect(list_view, "key-press-event", G_CALLBACK(on_listview_key_press_event), win);
+    g_signal_connect(list_view, "on-drag", G_CALLBACK(on_drag), win);
+    g_signal_connect(list_view, "drag-data-get", G_CALLBACK(on_drag_data_get), win);
+    g_signal_connect(list_view, "drag-begin", G_CALLBACK(on_drag_begin), win);
 
     win->result_view->list_view = list_view;
 }

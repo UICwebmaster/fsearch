@@ -33,6 +33,7 @@
 #include "fsearch_window.h"
 #include "fsearch_window_actions.h"
 #include <glib/gi18n.h>
+#include <string.h>
 
 struct _FsearchApplicationWindow {
     GtkApplicationWindow parent_instance;
@@ -867,10 +868,19 @@ append_selected_path(FsearchDatabaseEntry *entry, gpointer userdata) {
     }
 }
 
+static gint
+compare_paths_natural(gconstpointer a, gconstpointer b) {
+    g_autofree char *key_a = g_utf8_collate_key_for_filename(*(const char **)a, -1);
+    g_autofree char *key_b = g_utf8_collate_key_for_filename(*(const char **)b, -1);
+    return strcmp(key_a, key_b);
+}
+
 static GPtrArray *
 get_selected_paths(FsearchApplicationWindow *win) {
     GPtrArray *paths = g_ptr_array_new_with_free_func(g_free);
     fsearch_application_window_selection_for_each(win, append_selected_path, paths);
+    // The selection is unordered, hand the files over in a stable, natural order (e.g. "img 2" before "img 10")
+    g_ptr_array_sort(paths, compare_paths_natural);
     return paths;
 }
 
@@ -945,7 +955,18 @@ static void
 apply_icon_view_size(FsearchApplicationWindow *win) {
     FsearchConfig *config = fsearch_application_get_config(FSEARCH_APPLICATION_DEFAULT);
     const int32_t size = config->icon_view_size;
-    fsearch_list_view_set_min_row_height(win->result_view->list_view, size > 0 ? size + 2 * ROW_PADDING_Y : 0);
+    FsearchListView *list_view = win->result_view->list_view;
+    fsearch_list_view_set_min_row_height(list_view, size > 0 ? size + 2 * ROW_PADDING_Y : 0);
+
+    // Make sure the name is still readable next to large icons. The column is only widened, never narrowed,
+    // so a width chosen by the user is kept.
+    FsearchListViewColumn *name_col = fsearch_list_view_get_first_column_for_type(list_view,
+                                                                                  DATABASE_INDEX_PROPERTY_NAME);
+    const gint min_name_width = size + 2 * ROW_PADDING_X + 200;
+    if (size > 0 && name_col && name_col->width < min_name_width) {
+        name_col->width = min_name_width;
+        gtk_widget_queue_resize(GTK_WIDGET(list_view));
+    }
 }
 
 void

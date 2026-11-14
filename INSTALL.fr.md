@@ -2,6 +2,37 @@
 
 FSearch est un utilitaire de recherche de fichiers rapide (GTK 3), inspiré d'Everything sous Windows.
 
+## Installation en une commande (ce fork)
+
+Les paquets officiels (PPA, COPR, etc.) installent la version **amont** de Christian Boxdörfer, pas ce fork (miniatures, glisser-déposer, etc.). Pour **votre** version, compilez depuis ce dépôt — le script fait tout (dépendances, clone, compilation, installation).
+
+Sur la machine Linux, en utilisateur normal (pas root) :
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/UICwebmaster/fsearch/everything/install-linux.sh | bash
+```
+
+Sans droits d’écriture sur `/usr/local` (installation dans `~/.local`) :
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/UICwebmaster/fsearch/everything/install-linux.sh | env PREFIX="$HOME/.local" bash
+```
+
+Ensuite, vérifiez que `~/.local/bin` est dans votre `PATH`, puis lancez `fsearch`.
+
+Si vous avez déjà cloné le dépôt :
+
+```bash
+cd linux_find_everything   # racine du clone
+./install-linux.sh
+```
+
+Compilation seule, sans installation système : `SKIP_INSTALL=1 ./install-linux.sh` puis `./build/src/fsearch`.
+
+## Pourquoi c’est « compliqué » ?
+
+Sous Linux, il n’y a pas d’installateur `.exe` universel : chaque distribution gère les paquets différemment. Un **fork** personnalisé n’a en plus **aucun paquet prêt** sur les dépôts publics — d’où la compilation. Ce script automatise ce que ferait un développeur à la main.
+
 ## Choix rapide
 
 | Méthode | Pour qui ? |

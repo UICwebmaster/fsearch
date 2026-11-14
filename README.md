@@ -61,7 +61,13 @@ The **Development** packages are primarily intended for testing and adventurous 
 
 ## Installation (français)
 
-Guide détaillé : [INSTALL.fr.md](INSTALL.fr.md) (paquets, Flatpak, compilation).
+**Ce fork** (branche `everything`) — une commande sous Linux :
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/UICwebmaster/fsearch/everything/install-linux.sh | bash
+```
+
+Détails et options : [INSTALL.fr.md](INSTALL.fr.md) · script : [install-linux.sh](install-linux.sh).
 
 ## Localization
 

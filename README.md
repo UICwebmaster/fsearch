@@ -59,6 +59,10 @@ The **Development** packages are primarily intended for testing and adventurous 
 
 <https://github.com/cboxdoerfer/fsearch/wiki/Build-instructions>
 
+## Installation (français)
+
+Guide détaillé : [INSTALL.fr.md](INSTALL.fr.md) (paquets, Flatpak, compilation).
+
 ## Localization
 
 The localization of FSearch is managed with Weblate.
